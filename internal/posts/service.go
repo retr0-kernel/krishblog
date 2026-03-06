@@ -4,43 +4,109 @@ import (
 	"context"
 	"errors"
 
-	"krishblog/internal/database"
+	"krishblog/ent"
 	"krishblog/pkg/pagination"
 )
 
+var (
+	ErrNotFound       = errors.New("post not found")
+	ErrSlugTaken      = errors.New("slug already in use")
+	ErrInvalidSection = errors.New("invalid section id")
+)
+
+// Service implements post business logic.
 type Service struct {
-	db    *database.Postgres
-	redis *database.Redis
+	repo *Repository
 }
 
-func NewService(db *database.Postgres, redis *database.Redis) *Service {
-	return &Service{db: db, redis: redis}
+func NewService(repo *Repository) *Service {
+	return &Service{repo: repo}
 }
 
-func (s *Service) ListPublished(ctx context.Context, section, tag, query string, p pagination.Params) ([]PostResponse, int64, error) {
-	return []PostResponse{}, 0, nil
+func (s *Service) ListPublished(ctx context.Context, f ListFilter, p pagination.Params) ([]PostResponse, int64, error) {
+	f.Page = p.Page
+	f.Limit = p.Limit
+	posts, total, err := s.repo.ListPublished(ctx, f)
+	if err != nil {
+		return nil, 0, err
+	}
+	return toPostResponses(posts), int64(total), nil
 }
 
 func (s *Service) GetBySlug(ctx context.Context, slug string) (*PostResponse, error) {
-	return nil, errors.New("not found")
+	p, err := s.repo.GetBySlug(ctx, slug)
+	if err != nil {
+		return nil, err
+	}
+	r := toPostResponse(p)
+	return &r, nil
 }
 
-func (s *Service) AdminList(ctx context.Context, status, section string, p pagination.Params) ([]PostResponse, int64, error) {
-	return []PostResponse{}, 0, nil
+func (s *Service) AdminList(ctx context.Context, f ListFilter, p pagination.Params) ([]PostResponse, int64, error) {
+	f.Page = p.Page
+	f.Limit = p.Limit
+	posts, total, err := s.repo.AdminList(ctx, f)
+	if err != nil {
+		return nil, 0, err
+	}
+	return toPostResponses(posts), int64(total), nil
 }
 
 func (s *Service) Create(ctx context.Context, authorID string, req CreateRequest) (*PostResponse, error) {
-	return nil, errors.New("not implemented: wire Ent in step 2")
+	p, err := s.repo.Create(ctx, authorID, req)
+	if err != nil {
+		return nil, err
+	}
+	r := toPostResponse(p)
+	return &r, nil
 }
 
 func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (*PostResponse, error) {
-	return nil, errors.New("not implemented: wire Ent in step 2")
-}
-
-func (s *Service) UpdateStatus(ctx context.Context, id string, status PostStatus) (*PostResponse, error) {
-	return nil, errors.New("not implemented: wire Ent in step 2")
+	p, err := s.repo.Update(ctx, id, req)
+	if err != nil {
+		return nil, err
+	}
+	r := toPostResponse(p)
+	return &r, nil
 }
 
 func (s *Service) Delete(ctx context.Context, id string) error {
-	return errors.New("not implemented: wire Ent in step 2")
+	return s.repo.Delete(ctx, id)
+}
+
+// ── mapping ───────────────────────────────────────────────────────────────────
+
+func toPostResponse(p *ent.Post) PostResponse {
+	r := PostResponse{
+		ID:          p.ID.String(),
+		AuthorID:    p.AuthorID.String(),
+		SectionID:   p.SectionID.String(),
+		Title:       p.Title,
+		Slug:        p.Slug,
+		Summary:     p.Summary,
+		CoverImage:  p.CoverImage,
+		Status:      PostStatus(p.Status),
+		Published:   p.Published,
+		IsFeatured:  p.IsFeatured,
+		ReadTime:    p.ReadTime,
+		WordCount:   p.WordCount,
+		MetaTitle:   p.MetaTitle,
+		MetaDesc:    p.MetaDesc,
+		PublishedAt: p.PublishedAt,
+		ScheduledAt: p.ScheduledAt,
+		CreatedAt:   p.CreatedAt,
+		UpdatedAt:   p.UpdatedAt,
+	}
+	if p.Edges.Section != nil {
+		r.SectionSlug = p.Edges.Section.Slug
+	}
+	return r
+}
+
+func toPostResponses(posts []*ent.Post) []PostResponse {
+	out := make([]PostResponse, len(posts))
+	for i, p := range posts {
+		out[i] = toPostResponse(p)
+	}
+	return out
 }

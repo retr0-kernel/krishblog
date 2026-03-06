@@ -11,14 +11,16 @@ import (
 )
 
 type Config struct {
-	App       AppConfig
-	Database  DatabaseConfig
-	Redis     RedisConfig
-	JWT       JWTConfig
-	R2        R2Config
-	CORS      CORSConfig
-	RateLimit RateLimitConfig
-	Admin     AdminConfig
+	App           AppConfig
+	Database      DatabaseConfig
+	Redis         RedisConfig
+	JWT           JWTConfig
+	R2            R2Config
+	CORS          CORSConfig
+	RateLimit     RateLimitConfig
+	Admin         AdminConfig
+	Google        GoogleConfig
+	AllowedAdmins []string
 }
 
 type AppConfig struct {
@@ -61,6 +63,12 @@ type RateLimitConfig struct {
 type AdminConfig struct {
 	Email    string
 	Password string
+}
+
+type GoogleConfig struct {
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
 }
 
 func Load() (*Config, error) {
@@ -115,11 +123,37 @@ func Load() (*Config, error) {
 	cfg.Admin.Email = getDefault("ADMIN_EMAIL", "")
 	cfg.Admin.Password = getDefault("ADMIN_PASSWORD", "")
 
+	// Google OAuth
+	cfg.Google.ClientID = getDefault("GOOGLE_CLIENT_ID", "")
+	cfg.Google.ClientSecret = getDefault("GOOGLE_CLIENT_SECRET", "")
+	cfg.Google.RedirectURL = getDefault("GOOGLE_REDIRECT_URL", "http://localhost:8080/v1/auth/google/callback")
+
+	// Allowed admin emails (comma-separated)
+	allowedRaw := getDefault("ADMIN_ALLOWED_EMAILS", cfg.Admin.Email)
+	if allowedRaw != "" {
+		for _, e := range strings.Split(allowedRaw, ",") {
+			trimmed := strings.TrimSpace(strings.ToLower(e))
+			if trimmed != "" {
+				cfg.AllowedAdmins = append(cfg.AllowedAdmins, trimmed)
+			}
+		}
+	}
+
 	return cfg, nil
 }
 
 func (c *Config) IsDevelopment() bool {
 	return c.App.Env != "production"
+}
+
+func (c *Config) IsAdminAllowed(email string) bool {
+	email = strings.ToLower(strings.TrimSpace(email))
+	for _, allowed := range c.AllowedAdmins {
+		if allowed == email {
+			return true
+		}
+	}
+	return false
 }
 
 func getRequired(key string) string {

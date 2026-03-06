@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -29,59 +30,65 @@ import (
 var version = "dev"
 
 func main() {
-	// ── Config ────────────────────────────────────────────────────────────────
 	cfg, err := config.Load()
 	if err != nil {
-		panic("config load failed: " + err.Error())
+		panic("config: " + err.Error())
 	}
 
-	// ── Logger ────────────────────────────────────────────────────────────────
 	log := logger.New(cfg.App.Env)
 	startedAt := time.Now()
 
-	log.Info("starting server",
-		"version", version,
-		"env", cfg.App.Env,
-		"port", cfg.App.Port,
-	)
+	log.Info("starting", slog.String("version", version), slog.String("env", cfg.App.Env))
 
 	// ── Postgres ──────────────────────────────────────────────────────────────
 	pg, err := database.NewPostgres(cfg.Database.URL)
 	if err != nil {
-		log.Error("postgres connect failed", "error", err)
+		log.Error("postgres", "error", err)
 		os.Exit(1)
 	}
-	defer func() {
-		if cerr := pg.Close(); cerr != nil {
-			log.Error("postgres close error", "error", cerr)
-		}
-	}()
+	defer pg.Close()
 	log.Info("postgres connected")
 
 	// ── Redis ─────────────────────────────────────────────────────────────────
 	rdb, err := database.NewRedis(cfg.Redis.URL)
 	if err != nil {
-		log.Error("redis connect failed", "error", err)
+		log.Error("redis", "error", err)
 		os.Exit(1)
 	}
-	defer func() {
-		if cerr := rdb.Close(); cerr != nil {
-			log.Error("redis close error", "error", cerr)
-		}
-	}()
+	defer rdb.Close()
 	log.Info("redis connected")
 
+	// ── Ent ───────────────────────────────────────────────────────────────────
+	entClient, err := database.NewEntClient(pg)
+	if err != nil {
+		log.Error("ent client", "error", err)
+		os.Exit(1)
+	}
+	defer entClient.Close()
+
+	if cfg.IsDevelopment() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := database.RunMigrations(ctx, entClient); err != nil {
+			log.Error("migration", "error", err)
+			cancel()
+			os.Exit(1)
+		}
+		cancel()
+		log.Info("migrations applied")
+	}
+
 	// ── JWT ───────────────────────────────────────────────────────────────────
-	jwtManager := jwtpkg.NewManager(
-		cfg.JWT.Secret,
-		cfg.JWT.ExpiryHours,
-		cfg.JWT.RefreshExpiryHours,
-	)
+	jwtManager := jwtpkg.NewManager(cfg.JWT.Secret, cfg.JWT.ExpiryHours, cfg.JWT.RefreshExpiryHours)
 
 	// ── Services ──────────────────────────────────────────────────────────────
-	authSvc := auth.NewService(rdb, jwtManager)
-	postsSvc := posts.NewService(pg, rdb)
-	sectionsSvc := sections.NewService(pg, rdb)
+	authSvc := auth.NewService(entClient, rdb, jwtManager, cfg, log)
+
+	sectionRepo := sections.NewRepository(entClient)
+	sectionSvc := sections.NewService(sectionRepo)
+
+	postRepo := posts.NewRepository(entClient)
+	postSvc := posts.NewService(postRepo)
+
 	analyticsSvc := analytics.NewService(pg, rdb)
 	mediaSvc := media.NewService(pg, rdb)
 
@@ -94,8 +101,8 @@ func main() {
 			StartedAt: startedAt,
 		}),
 		Auth:      auth.NewHandler(authSvc),
-		Posts:     posts.NewHandler(postsSvc),
-		Sections:  sections.NewHandler(sectionsSvc),
+		Posts:     posts.NewHandler(postSvc),
+		Sections:  sections.NewHandler(sectionSvc),
 		Analytics: analytics.NewHandler(analyticsSvc),
 		Media:     media.NewHandler(mediaSvc),
 	}
@@ -105,29 +112,8 @@ func main() {
 	e.HideBanner = true
 	e.HidePort = true
 	e.Validator = validator.New()
+	e.HTTPErrorHandler = httpErrorHandler
 
-	e.HTTPErrorHandler = func(err error, c echo.Context) {
-		var he *echo.HTTPError
-		if errors.As(err, &he) {
-			_ = c.JSON(he.Code, map[string]interface{}{
-				"success": false,
-				"error": map[string]interface{}{
-					"code":    http.StatusText(he.Code),
-					"message": he.Message,
-				},
-			})
-			return
-		}
-		_ = c.JSON(http.StatusInternalServerError, map[string]interface{}{
-			"success": false,
-			"error": map[string]interface{}{
-				"code":    "INTERNAL_ERROR",
-				"message": "an unexpected error occurred",
-			},
-		})
-	}
-
-	// ── Routes ────────────────────────────────────────────────────────────────
 	api.Register(e, handlers, api.RouterConfig{
 		AllowedOrigins: cfg.CORS.AllowedOrigins,
 		RPS:            cfg.RateLimit.RPS,
@@ -137,11 +123,11 @@ func main() {
 		Logger:         log,
 	})
 
-	// ── Graceful shutdown ─────────────────────────────────────────────────────
+	// ── Serve ─────────────────────────────────────────────────────────────────
 	serverErr := make(chan error, 1)
 	go func() {
 		addr := ":" + cfg.App.Port
-		log.Info("listening", "addr", addr)
+		log.Info("listening", slog.String("addr", addr))
 		if err := e.Start(addr); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErr <- err
 		}
@@ -155,19 +141,31 @@ func main() {
 		log.Error("server error", "error", err)
 		os.Exit(1)
 	case sig := <-quit:
-		log.Info("shutdown signal received", "signal", sig.String())
+		log.Info("shutdown", slog.String("signal", sig.String()))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-
 	if err := e.Shutdown(ctx); err != nil {
 		log.Error("forced shutdown", "error", err)
 		os.Exit(1)
 	}
-
-	log.Info("server stopped gracefully")
+	log.Info("stopped")
 }
 
-// Ensure mw import is used (referenced in router, not main — kept for clarity).
+func httpErrorHandler(err error, c echo.Context) {
+	var he *echo.HTTPError
+	if errors.As(err, &he) {
+		_ = c.JSON(he.Code, map[string]interface{}{
+			"success": false,
+			"error":   map[string]interface{}{"code": http.StatusText(he.Code), "message": he.Message},
+		})
+		return
+	}
+	_ = c.JSON(http.StatusInternalServerError, map[string]interface{}{
+		"success": false,
+		"error":   map[string]interface{}{"code": "INTERNAL_ERROR", "message": "an unexpected error occurred"},
+	})
+}
+
 var _ = mw.GetRequestID

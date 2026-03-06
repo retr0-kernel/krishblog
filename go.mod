@@ -12,11 +12,13 @@ require (
 	github.com/lib/pq v1.11.2
 	github.com/redis/go-redis/v9 v9.18.0
 	golang.org/x/crypto v0.46.0
+	golang.org/x/oauth2 v0.35.0
 	golang.org/x/text v0.32.0
 )
 
 require (
 	ariga.io/atlas v0.32.1-0.20250325101103-175b25e1c1b9 // indirect
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/bmatcuk/doublestar v1.3.4 // indirect

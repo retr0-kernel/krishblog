@@ -1,4 +1,4 @@
-package posts
+package sections
 
 import (
 	"errors"
@@ -6,11 +6,10 @@ import (
 	"github.com/labstack/echo/v4"
 
 	mw "krishblog/internal/middleware"
-	"krishblog/pkg/pagination"
 	"krishblog/pkg/response"
 )
 
-// Handler handles post HTTP routes.
+// Handler handles section HTTP routes.
 type Handler struct {
 	svc *Service
 }
@@ -19,50 +18,38 @@ func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-// List handles GET /v1/public/posts
-func (h *Handler) List(c echo.Context) error {
-	p := pagination.Parse(c)
-	f := ListFilter{
-		SectionSlug: c.QueryParam("section"),
-		Search:      c.QueryParam("q"),
-		Featured:    c.QueryParam("featured") == "true",
-	}
-	posts, total, err := h.svc.ListPublished(c.Request().Context(), f, p)
+// ListPublic handles GET /v1/public/sections
+func (h *Handler) ListPublic(c echo.Context) error {
+	secs, err := h.svc.ListActive(c.Request().Context())
 	if err != nil {
 		return response.InternalServerError(c, mw.GetRequestID(c))
 	}
-	return response.OKWithMeta(c, posts, pagination.NewMeta(p, total))
+	return response.OK(c, secs)
 }
 
-// GetBySlug handles GET /v1/public/posts/:slug
+// GetBySlug handles GET /v1/public/sections/:slug
 func (h *Handler) GetBySlug(c echo.Context) error {
-	p, err := h.svc.GetBySlug(c.Request().Context(), c.Param("slug"))
+	sec, err := h.svc.GetBySlug(c.Request().Context(), c.Param("slug"))
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			return response.NotFound(c, "post")
+			return response.NotFound(c, "section")
 		}
 		return response.InternalServerError(c, mw.GetRequestID(c))
 	}
-	return response.OK(c, p)
+	return response.OK(c, sec)
 }
 
-// AdminList handles GET /v1/admin/posts
+// AdminList handles GET /v1/admin/sections
 func (h *Handler) AdminList(c echo.Context) error {
-	p := pagination.Parse(c)
-	f := ListFilter{
-		Status:      c.QueryParam("status"),
-		SectionSlug: c.QueryParam("section"),
-	}
-	posts, total, err := h.svc.AdminList(c.Request().Context(), f, p)
+	secs, err := h.svc.ListAll(c.Request().Context())
 	if err != nil {
 		return response.InternalServerError(c, mw.GetRequestID(c))
 	}
-	return response.OKWithMeta(c, posts, pagination.NewMeta(p, total))
+	return response.OK(c, secs)
 }
 
-// Create handles POST /v1/admin/posts
+// Create handles POST /v1/admin/sections
 func (h *Handler) Create(c echo.Context) error {
-	claims := mw.GetClaims(c)
 	var req CreateRequest
 	if err := c.Bind(&req); err != nil {
 		return response.BadRequest(c, "INVALID_BODY", "malformed request body", nil)
@@ -70,20 +57,17 @@ func (h *Handler) Create(c echo.Context) error {
 	if err := c.Validate(&req); err != nil {
 		return err
 	}
-	p, err := h.svc.Create(c.Request().Context(), claims.UserID, req)
+	sec, err := h.svc.Create(c.Request().Context(), req)
 	if err != nil {
 		if errors.Is(err, ErrSlugTaken) {
 			return response.Conflict(c, "slug already in use")
 		}
-		if errors.Is(err, ErrInvalidSection) {
-			return response.BadRequest(c, "INVALID_SECTION", "section not found", nil)
-		}
 		return response.InternalServerError(c, mw.GetRequestID(c))
 	}
-	return response.Created(c, p)
+	return response.Created(c, sec)
 }
 
-// Update handles PUT /v1/admin/posts/:id
+// Update handles PUT /v1/admin/sections/:id
 func (h *Handler) Update(c echo.Context) error {
 	var req UpdateRequest
 	if err := c.Bind(&req); err != nil {
@@ -92,24 +76,25 @@ func (h *Handler) Update(c echo.Context) error {
 	if err := c.Validate(&req); err != nil {
 		return err
 	}
-	p, err := h.svc.Update(c.Request().Context(), c.Param("id"), req)
+	sec, err := h.svc.Update(c.Request().Context(), c.Param("id"), req)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			return response.NotFound(c, "post")
+			return response.NotFound(c, "section")
 		}
 		if errors.Is(err, ErrSlugTaken) {
 			return response.Conflict(c, "slug already in use")
 		}
 		return response.InternalServerError(c, mw.GetRequestID(c))
 	}
-	return response.OK(c, p)
+	return response.OK(c, sec)
 }
 
-// Delete handles DELETE /v1/admin/posts/:id
+// Delete handles DELETE /v1/admin/sections/:id
 func (h *Handler) Delete(c echo.Context) error {
-	if err := h.svc.Delete(c.Request().Context(), c.Param("id")); err != nil {
+	err := h.svc.Delete(c.Request().Context(), c.Param("id"))
+	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			return response.NotFound(c, "post")
+			return response.NotFound(c, "section")
 		}
 		return response.InternalServerError(c, mw.GetRequestID(c))
 	}

@@ -10,8 +10,12 @@ import (
 	"krishblog/pkg/response"
 )
 
-const refreshCookieName = "refresh_token"
+const (
+	refreshCookieName = "refresh_token"
+	stateCookieName   = "oauth_state"
+)
 
+// Handler handles auth HTTP routes.
 type Handler struct {
 	svc *Service
 }
@@ -20,6 +24,7 @@ func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
 }
 
+// Login handles POST /v1/auth/login
 func (h *Handler) Login(c echo.Context) error {
 	var req LoginRequest
 	if err := c.Bind(&req); err != nil {
@@ -29,64 +34,96 @@ func (h *Handler) Login(c echo.Context) error {
 		return err
 	}
 
-	loginResp, refreshToken, err := h.svc.Login(c.Request().Context(), req)
+	resp, refreshToken, err := h.svc.Login(
+		c.Request().Context(), req,
+		c.RealIP(), c.Request().UserAgent(),
+	)
 	if err != nil {
 		return response.Unauthorized(c, err.Error())
 	}
 
-	h.setRefreshCookie(c, refreshToken, h.svc.RefreshCookieTTL())
-	return response.OK(c, loginResp)
+	setRefreshCookie(c, refreshToken, h.svc.RefreshCookieTTL())
+	return response.OK(c, resp)
 }
 
+// Refresh handles POST /v1/auth/refresh
 func (h *Handler) Refresh(c echo.Context) error {
-	refreshToken := ""
-
-	if cookie, err := c.Cookie(refreshCookieName); err == nil && cookie.Value != "" {
-		refreshToken = cookie.Value
-	}
+	refreshToken := extractRefreshToken(c)
 	if refreshToken == "" {
-		var req RefreshRequest
-		if err := c.Bind(&req); err == nil {
-			refreshToken = req.RefreshToken
-		}
-	}
-	if refreshToken == "" {
-		return response.Unauthorized(c, "refresh token is required")
+		return response.Unauthorized(c, "refresh token required")
 	}
 
-	accessToken, err := h.svc.Refresh(c.Request().Context(), refreshToken)
+	access, newRefresh, err := h.svc.Refresh(c.Request().Context(), refreshToken)
 	if err != nil {
-		h.clearRefreshCookie(c)
+		clearRefreshCookie(c)
 		return response.Unauthorized(c, err.Error())
 	}
 
+	// Rotate cookie
+	setRefreshCookie(c, newRefresh, h.svc.RefreshCookieTTL())
 	return response.OK(c, map[string]string{
-		"access_token": accessToken,
+		"access_token": access,
 		"token_type":   "Bearer",
 	})
 }
 
+// Logout handles POST /v1/auth/logout
 func (h *Handler) Logout(c echo.Context) error {
-	if cookie, err := c.Cookie(refreshCookieName); err == nil && cookie.Value != "" {
-		_ = h.svc.Logout(c.Request().Context(), cookie.Value)
-	}
-	h.clearRefreshCookie(c)
+	token := extractRefreshToken(c)
+	_ = h.svc.Logout(
+		c.Request().Context(), token,
+		c.RealIP(), c.Request().UserAgent(),
+	)
+	clearRefreshCookie(c)
 	return response.NoContent(c)
 }
 
+// Me handles GET /v1/auth/me
 func (h *Handler) Me(c echo.Context) error {
 	claims := mw.GetClaims(c)
 	if claims == nil {
 		return response.Unauthorized(c, "not authenticated")
 	}
-	return response.OK(c, UserResponse{
-		ID:    claims.UserID,
-		Email: claims.Email,
-		Role:  claims.Role,
+	return response.OK(c, map[string]string{
+		"id":    claims.UserID,
+		"email": claims.Email,
+		"role":  claims.Role,
 	})
 }
 
-func (h *Handler) setRefreshCookie(c echo.Context, token string, ttl time.Duration) {
+// GoogleLogin handles GET /v1/auth/google
+func (h *Handler) GoogleLogin(c echo.Context) error {
+	url, err := h.svc.GoogleAuthURL(c.Request().Context())
+	if err != nil {
+		return response.InternalServerError(c, mw.GetRequestID(c))
+	}
+	return c.Redirect(http.StatusTemporaryRedirect, url)
+}
+
+// GoogleCallback handles GET /v1/auth/google/callback
+func (h *Handler) GoogleCallback(c echo.Context) error {
+	code := c.QueryParam("code")
+	state := c.QueryParam("state")
+
+	if code == "" || state == "" {
+		return response.BadRequest(c, "MISSING_PARAMS", "code and state are required", nil)
+	}
+
+	resp, refreshToken, err := h.svc.GoogleCallback(
+		c.Request().Context(), code, state,
+		c.RealIP(), c.Request().UserAgent(),
+	)
+	if err != nil {
+		return response.Unauthorized(c, err.Error())
+	}
+
+	setRefreshCookie(c, refreshToken, h.svc.RefreshCookieTTL())
+	return response.OK(c, resp)
+}
+
+// ── cookie helpers ────────────────────────────────────────────────────────────
+
+func setRefreshCookie(c echo.Context, token string, ttl time.Duration) {
 	c.SetCookie(&http.Cookie{
 		Name:     refreshCookieName,
 		Value:    token,
@@ -98,7 +135,7 @@ func (h *Handler) setRefreshCookie(c echo.Context, token string, ttl time.Durati
 	})
 }
 
-func (h *Handler) clearRefreshCookie(c echo.Context) {
+func clearRefreshCookie(c echo.Context) {
 	c.SetCookie(&http.Cookie{
 		Name:     refreshCookieName,
 		Value:    "",
@@ -108,4 +145,15 @@ func (h *Handler) clearRefreshCookie(c echo.Context) {
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   -1,
 	})
+}
+
+func extractRefreshToken(c echo.Context) string {
+	if cookie, err := c.Cookie(refreshCookieName); err == nil && cookie.Value != "" {
+		return cookie.Value
+	}
+	var req RefreshRequest
+	if err := c.Bind(&req); err == nil && req.RefreshToken != "" {
+		return req.RefreshToken
+	}
+	return ""
 }

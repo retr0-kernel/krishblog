@@ -57,6 +57,8 @@ func Register(e *echo.Echo, h Handlers, cfg RouterConfig) {
 	authGroup.POST("/refresh", h.Auth.Refresh)
 	authGroup.POST("/logout", h.Auth.Logout, mw.Auth(cfg.JWTManager))
 	authGroup.GET("/me", h.Auth.Me, mw.Auth(cfg.JWTManager))
+	authGroup.GET("/google", h.Auth.GoogleLogin)
+	authGroup.GET("/google/callback", h.Auth.GoogleCallback)
 
 	// ── Public ────────────────────────────────────────────────────────────────
 	pub := v1.Group("/public")
@@ -84,7 +86,7 @@ func Register(e *echo.Echo, h Handlers, cfg RouterConfig) {
 	ap.GET("", h.Posts.AdminList)
 	ap.POST("", h.Posts.Create)
 	ap.PUT("/:id", h.Posts.Update)
-	ap.PATCH("/:id/status", h.Posts.UpdateStatus)
+	//ap.PATCH("/:id/status", h.Posts.UpdateStatus)
 	ap.DELETE("/:id", h.Posts.Delete, mw.RequireRole("admin"))
 
 	// Sections — admin+
