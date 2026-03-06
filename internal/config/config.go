@@ -99,11 +99,17 @@ func Load() (*Config, error) {
 	}
 	cfg.JWT.RefreshExpiryHours = time.Duration(refreshH) * time.Hour
 
-	cfg.R2.AccountID = getRequired("R2_ACCOUNT_ID")
-	cfg.R2.AccessKeyID = getRequired("R2_ACCESS_KEY_ID")
-	cfg.R2.SecretAccessKey = getRequired("R2_SECRET_ACCESS_KEY")
-	cfg.R2.BucketName = getRequired("R2_BUCKET_NAME")
-	cfg.R2.PublicURL = getRequired("R2_PUBLIC_URL")
+	//cfg.R2.AccountID = getRequired("R2_ACCOUNT_ID")
+	//cfg.R2.AccessKeyID = getRequired("R2_ACCESS_KEY_ID")
+	//cfg.R2.SecretAccessKey = getRequired("R2_SECRET_ACCESS_KEY")
+	//cfg.R2.BucketName = getRequired("R2_BUCKET_NAME")
+	//cfg.R2.PublicURL = getRequired("R2_PUBLIC_URL")
+
+	cfg.R2.AccountID = getDefault("R2_ACCOUNT_ID", "")
+	cfg.R2.AccessKeyID = getDefault("R2_ACCESS_KEY_ID", "")
+	cfg.R2.SecretAccessKey = getDefault("R2_SECRET_ACCESS_KEY", "")
+	cfg.R2.BucketName = getDefault("R2_BUCKET_NAME", "")
+	cfg.R2.PublicURL = getDefault("R2_PUBLIC_URL", "")
 
 	originsRaw := getDefault("ALLOWED_ORIGINS", "http://localhost:3000")
 	cfg.CORS.AllowedOrigins = strings.Split(originsRaw, ",")
