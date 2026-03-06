@@ -71,7 +71,11 @@ func Load() (*Config, error) {
 	cfg := &Config{}
 
 	cfg.App.Env = getRequired("APP_ENV")
-	cfg.App.Port = getDefault("APP_PORT", "8080")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = getDefault("APP_PORT", "8080")
+	}
+	cfg.App.Port = port
 	cfg.App.Secret = getRequired("APP_SECRET")
 
 	cfg.Database.URL = getRequired("DATABASE_URL")
