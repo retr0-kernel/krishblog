@@ -1,5 +1,5 @@
 # ── Stage 1: build ─────────────────────────────────────────────
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates tzdata
 
@@ -10,10 +10,10 @@ RUN go mod download
 
 COPY . .
 
-# generate ent BEFORE install to avoid extra memory
+# generate ent code
 RUN go run entgo.io/ent/cmd/ent generate ./ent/schema
 
-# build with limited parallelism (important for Railway builders)
+# build
 ENV GOMAXPROCS=2
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
