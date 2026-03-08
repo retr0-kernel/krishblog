@@ -91,6 +91,7 @@ func (h *Handler) AdminNotify(c echo.Context) error {
 		return response.BadRequest(c, "MISSING_FIELDS", "post_title and post_slug are required", nil)
 	}
 	if err := h.svc.NotifyNewPost(c.Request().Context(), req.PostTitle, req.PostSlug, req.PostSummary); err != nil {
+		c.Logger().Error("failed to notify subscribers: ", err)
 		return response.InternalServerError(c, "notify failed")
 	}
 	return response.OK(c, map[string]string{"message": "Notifications sent."})

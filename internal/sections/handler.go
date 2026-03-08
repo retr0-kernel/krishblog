@@ -96,6 +96,7 @@ func (h *Handler) Delete(c echo.Context) error {
 		if errors.Is(err, ErrNotFound) {
 			return response.NotFound(c, "section")
 		}
+		c.Logger().Error("failed to delete section: ", err)
 		return response.InternalServerError(c, mw.GetRequestID(c))
 	}
 	return response.NoContent(c)

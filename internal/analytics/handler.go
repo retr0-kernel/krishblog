@@ -64,6 +64,7 @@ func (h *Handler) AdminPostStats(c echo.Context) error {
 
 	stats, err := h.svc.PostStats(c.Request().Context(), postID, days)
 	if err != nil {
+		c.Logger().Error("failed to get post stats: ", err)
 		return response.InternalServerError(c, mw.GetRequestID(c))
 	}
 	return response.OK(c, stats)

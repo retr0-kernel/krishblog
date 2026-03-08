@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/smtp"
 	"strings"
 )
@@ -28,10 +29,11 @@ type EmailConfig struct {
 type Service struct {
 	repo *Repository
 	cfg  EmailConfig
+	log  *slog.Logger
 }
 
-func NewService(repo *Repository, cfg EmailConfig) *Service {
-	return &Service{repo: repo, cfg: cfg}
+func NewService(repo *Repository, cfg EmailConfig, log *slog.Logger) *Service {
+	return &Service{repo: repo, cfg: cfg, log: log}
 }
 
 // Subscribe creates a subscriber and sends a confirmation email.
@@ -54,7 +56,10 @@ func (s *Service) Subscribe(ctx context.Context, email, name string) error {
 	// Fire-and-forget: SMTP errors are logged but never returned to the caller.
 	go func() {
 		if err := s.sendConfirmation(sub); err != nil {
-			fmt.Printf("[subscribers] confirmation email to %s failed: %v\n", sub.Email, err)
+			s.log.Error("failed to send confirmation email",
+				slog.String("email", sub.Email),
+				slog.String("error", err.Error()),
+			)
 		}
 	}()
 
@@ -84,7 +89,11 @@ func (s *Service) NotifyNewPost(ctx context.Context, postTitle, postSlug, postSu
 		unsubURL := fmt.Sprintf("%s/unsubscribe?token=%s", s.cfg.SiteURL, sub.Token)
 		if err := s.sendNewPostEmail(sub, postTitle, postURL, postSummary, unsubURL); err != nil {
 			// Log but continue — don't fail the whole batch for one bad address
-			fmt.Printf("[subscribers] failed to email %s: %v\n", sub.Email, err)
+			s.log.Error("failed to send new post notification",
+				slog.String("email", sub.Email),
+				slog.String("post", postTitle),
+				slog.String("error", err.Error()),
+			)
 		}
 	}
 	return nil
@@ -144,7 +153,10 @@ To unsubscribe: %s`,
 func (s *Service) sendEmail(to, subject, body string) error {
 	if s.cfg.Host == "" {
 		// No SMTP configured — just log (dev mode)
-		fmt.Printf("[email] To: %s | Subject: %s\n%s\n---\n", to, subject, body)
+		s.log.Info("email (dev mode - not sent)",
+			slog.String("to", to),
+			slog.String("subject", subject),
+		)
 		return nil
 	}
 	msg := strings.Join([]string{

@@ -134,6 +134,7 @@ func (h *Handler) Update(c echo.Context) error {
 
 func (h *Handler) Delete(c echo.Context) error {
 	if err := h.svc.Delete(c.Request().Context(), c.Param("id")); err != nil {
+		c.Logger().Error("failed to delete media: ", err)
 		return response.InternalServerError(c, mw.GetRequestID(c))
 	}
 	return response.NoContent(c)

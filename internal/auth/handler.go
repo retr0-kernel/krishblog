@@ -39,6 +39,7 @@ func (h *Handler) Login(c echo.Context) error {
 		c.RealIP(), c.Request().UserAgent(),
 	)
 	if err != nil {
+		c.Logger().Error("login failed: ", err)
 		return response.Unauthorized(c, err.Error())
 	}
 
@@ -95,6 +96,7 @@ func (h *Handler) Me(c echo.Context) error {
 func (h *Handler) GoogleLogin(c echo.Context) error {
 	url, err := h.svc.GoogleAuthURL(c.Request().Context())
 	if err != nil {
+		c.Logger().Error("failed to generate Google auth URL: ", err)
 		return response.InternalServerError(c, mw.GetRequestID(c))
 	}
 	return c.Redirect(http.StatusTemporaryRedirect, url)
@@ -114,6 +116,7 @@ func (h *Handler) GoogleCallback(c echo.Context) error {
 		c.RealIP(), c.Request().UserAgent(),
 	)
 	if err != nil {
+		c.Logger().Error("Google callback failed: ", err)
 		return response.Unauthorized(c, err.Error())
 	}
 

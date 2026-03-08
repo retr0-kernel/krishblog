@@ -115,6 +115,7 @@ func (h *Handler) UpdateStatus(c echo.Context) error {
 // Delete handles DELETE /admin/posts/:id
 func (h *Handler) Delete(c echo.Context) error {
 	if err := h.svc.Delete(c.Request().Context(), c.Param("id")); err != nil {
+		c.Logger().Error("failed to delete post: ", err)
 		return response.InternalServerError(c, mw.GetRequestID(c))
 	}
 	return response.NoContent(c)

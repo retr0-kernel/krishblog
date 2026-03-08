@@ -93,7 +93,7 @@ func main() {
 		From:     cfg.Email.From,
 		SiteURL:  cfg.Site.URL,
 		SiteName: cfg.Site.Name,
-	})
+	}, log)
 
 	// ── Handlers ──────────────────────────────────────────────────────────────
 	handlers := api.Handlers{
