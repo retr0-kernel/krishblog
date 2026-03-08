@@ -160,21 +160,19 @@ func (r *Repository) Create(ctx context.Context, authorID string, req CreateRequ
 	rtm := readingTime(wc)
 
 	const q = `
-		INSERT INTO posts (
-			section_id, author_id, title, slug, excerpt, content,
-			cover_image, cover_image_alt, status, is_featured,
-			reading_time_min, word_count, meta_title, meta_desc,
-			scheduled_at, published_at, created_at, updated_at,
-			search_vector
-		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW(),NOW(),
-			to_tsvector('english', $3::text||' '||COALESCE($5::text,'')||' '||COALESCE($6::text,''))
-		)
-		RETURNING id, section_id, ''::text, author_id, title, slug,
-		          COALESCE(excerpt,''), COALESCE(cover_image,''), COALESCE(cover_image_alt,''),
-		          status, is_featured, reading_time_min, word_count,
-		          published_at, created_at, updated_at,
-		          COALESCE(content,''), COALESCE(meta_title,''), COALESCE(meta_desc,'')`
+        INSERT INTO posts (
+            section_id, author_id, title, slug, excerpt, content,
+            cover_image, cover_image_alt, status, is_featured,
+            reading_time_min, word_count, meta_title, meta_desc,
+            scheduled_at, published_at, created_at, updated_at
+        ) VALUES (
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW(),NOW()
+        )
+        RETURNING id, section_id, ''::text, author_id, title, slug,
+                  COALESCE(excerpt,''), COALESCE(cover_image,''), COALESCE(cover_image_alt,''),
+                  status, is_featured, reading_time_min, word_count,
+                  published_at, created_at, updated_at,
+                  COALESCE(content,''), COALESCE(meta_title,''), COALESCE(meta_desc,'')`
 
 	return r.scanOne(ctx, q,
 		req.SectionID, authorID, req.Title, sl, req.Excerpt, req.Content,
@@ -207,19 +205,18 @@ func (r *Repository) Update(ctx context.Context, id string, req UpdateRequest) (
 	rtm := readingTime(wc)
 
 	const q = `
-		UPDATE posts SET
-			section_id=$1, title=$2, slug=$3, excerpt=$4, content=$5,
-			cover_image=$6, cover_image_alt=$7, is_featured=$8,
-			reading_time_min=$9, word_count=$10,
-			meta_title=$11, meta_desc=$12, scheduled_at=$13,
-			updated_at=NOW(),
-			search_vector=to_tsvector('english',$2::text||' '||coalesce($4::text,'')||' '||coalesce($5::text,''))
-		WHERE id=$14
-		RETURNING id, section_id, ''::text, author_id, title, slug,
-		          COALESCE(excerpt,''), COALESCE(cover_image,''), COALESCE(cover_image_alt,''),
-		          status, is_featured, reading_time_min, word_count,
-		          published_at, created_at, updated_at,
-		          COALESCE(content,''), COALESCE(meta_title,''), COALESCE(meta_desc,'')`
+        UPDATE posts SET
+            section_id=$1, title=$2, slug=$3, excerpt=$4, content=$5,
+            cover_image=$6, cover_image_alt=$7, is_featured=$8,
+            reading_time_min=$9, word_count=$10,
+            meta_title=$11, meta_desc=$12, scheduled_at=$13,
+            updated_at=NOW()
+        WHERE id=$14
+        RETURNING id, section_id, ''::text, author_id, title, slug,
+                  COALESCE(excerpt,''), COALESCE(cover_image,''), COALESCE(cover_image_alt,''),
+                  status, is_featured, reading_time_min, word_count,
+                  published_at, created_at, updated_at,
+                  COALESCE(content,''), COALESCE(meta_title,''), COALESCE(meta_desc,'')`
 
 	return r.scanOne(ctx, q,
 		sectionID, title, sl, excerpt, content,
