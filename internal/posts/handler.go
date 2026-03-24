@@ -120,11 +120,3 @@ func (h *Handler) Delete(c echo.Context) error {
 	}
 	return response.NoContent(c)
 }
-
-func (h *Handler) AdminGet(c echo.Context) error {
-	post, err := h.svc.GetByID(c.Request().Context(), c.Param("id"))
-	if err != nil {
-		return response.NotFound(c, "post")
-	}
-	return response.OK(c, post)
-}
